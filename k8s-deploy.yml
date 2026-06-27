@@ -1,46 +1,37 @@
-pipeline {
-    agent any
-
-    stages {
-        stage('git') {
-            steps {
-                git 'https://github.com/SureshPotey/asokit-javawabapp.git'
-            }
-        }
-        stage('Build'){
-            steps{
-                sh 'mvn clean package'
-            }
-       }
-       stage('sonarqube QC'){
-           steps{
-               withSonarQubeEnv ('SonarQube'){
-                    sh 'mvn org.sonarsource.scanner.maven:sonar-maven-plugin:sonar'
-               }        
-           }
-       }
-       stage('Aritifact Nexus'){
-           steps{
-              nexusArtifactUploader artifacts: [[artifactId: 'suri-app', classifier: '', file: 'target/maven-web-app.war', type: 'war']], credentialsId: 'Nexus', groupId: 'in.ashokit', nexusUrl: '13.233.157.76:8081', nexusVersion: 'nexus3', protocol: 'http', repository: 'ashok', version: '3.0-RELEASE' 
-           }
-       }
-       stage('container Image'){
-           steps{
-               sh 'docker build -t poteysuresh/asokit .'
-           }
-       }
-       stage('docker push'){
-           steps{
-               withCredentials([string(credentialsId: 'dockerpasswd', variable: 'dockerpasswd')]) {
-                   sh "docker login -u poteysuresh -p ${dockerpasswd}"
-                   sh 'docker push poteysuresh/asokit'
-               }
-           }
-       }
-       stage('deployment on cluster'){
-           steps{
-               sh 'kubectl apply -f k8s-deploy.yml'
-           }
-       }
-    }
-}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+ name: mavenwebappdeployment
+spec:
+ replicas: 2
+ strategy: 
+    type: Recreate
+ selector: 
+   matchLabels: 
+     app: mavenwebapp
+ template:
+  metadata:
+   name: mavenwebapppod
+   labels:
+     app: mavenwebapp	 
+  spec: 
+    containers:
+    - name: mavenwebappcontainer
+      image: poteysuresh/asokit
+      imagePullPolicy: Always
+      ports:
+      - containerPort: 8080
+---
+apiVersion: v1
+kind: Service
+metadata:
+ name: mavenwebappsvc
+spec:
+  type: LoadBalancer
+  selector:
+   app: mavenwebapp
+  ports:
+   - port: 80
+     targetPort: 8080
+...
